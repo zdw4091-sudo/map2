@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>百度风格迁徙图演示</title>
+    <!-- 引入 ECharts 核心文件 -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <!-- 引入 ECharts 中国地图静态数据 (提供底图轮廓) -->
+    <script src="https://registry.npmmirror.com/echarts/4.9.0/files/map/js/china.js"></script>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #1b1b1b; /* 默认深色底，避免加载时的白屏 */
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+        #chart-container {
+            width: 100%;
+            height: 100%;
+        }
+        /* 控制面板样式 */
+        .control-panel {
+            position: absolute;
+            bottom: 30px;
+            left: 30px;
+            z-index: 999;
+            background: rgba(40, 50, 60, 0.8);
+            padding: 15px 20px;
+            border-radius: 8px;
+            color: #fff;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255,255,255,0.1);
+            backdrop-filter: blur(4px);
+        }
+        .control-panel select {
+            background: #1e252e;
+            color: #fff;
+            border: 1px solid #404a59;
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin-right: 15px;
+            font-size: 14px;
+            outline: none;
+            cursor: pointer;
+            transition: border-color 0.3s;
+        }
+        .control-panel select:hover {
+            border-color: #ffa022;
+        }
+        .control-panel label {
+            font-size: 14px;
+            margin-right: 8px;
+            color: #ccc;
+        }
+    </style>
+</head>
+<body>
+
+<!-- 地图挂载点 -->
+<div id="chart-container"></div>
+
+<!-- 浮动控制面板 -->
+<div class="control-panel">
+    <label for="yearSelect">年份:</label>
+    <select id="yearSelect"></select>
+    
+    <label for="citySelect">流出城市:</label>
+    <select id="citySelect"></select>
+</div>
+
+<script>
+    // 1. 各个城市的静态经纬度坐标字典 (匹配您的 CSV 数据)
+    const geoCoordMap = {
+        "吐鲁番市": [89.1895, 42.9514], "武威市": [102.6347, 37.9299], "西安市": [108.9398, 34.3413], 
+        "绥化市": [126.9688, 46.6538], "兰州市": [103.8343, 36.0611], "大庆市": [125.1127, 46.5907], 
+        "哈密市": [93.5131, 42.8332], "金昌市": [102.188, 38.5201], "定西市": [104.6263, 35.5796], 
+        "酒泉市": [98.5107, 39.744], "双鸭山市": [131.1573, 46.6434], "张掖市": [100.4499, 38.9259], 
+        "大连市": [121.6147, 38.914], "乌鲁木齐市": [87.6168, 43.8256], "黑河市": [127.499, 50.2496], 
+        "鹤岗市": [130.2775, 47.332], "鸡西市": [130.9693, 45.3005], "阿拉善盟": [105.7064, 38.8448], 
+        "哈尔滨市": [126.535, 45.8029], "长春市": [125.3235, 43.8171], "嘉峪关市": [98.2891, 39.7731], 
+        "佳木斯市": [130.3189, 46.7997], "伊春市": [128.8994, 47.7247], "海西蒙古族藏族自治州": [97.3708, 37.3747], 
+        "北京市": [116.4074, 39.9042], "沈阳市": [123.4315, 41.8057], "牡丹江市": [129.6032, 44.5829], 
+        "齐齐哈尔市": [123.9182, 47.3543], "青岛市": [120.3826, 36.0671], "威海市": [122.1204, 37.5131]
+    };
+    
+    // 2. 转换后的层级数据嵌套
+    const migrationData = {
+        "2022": {"鹤岗市": [{"name": "哈尔滨市", "value": 41.82}, {"name": "佳木斯市", "value": 33.32}, {"name": "双鸭山市", "value": 3.01}, {"name": "伊春市", "value": 2.27}, {"name": "北京市", "value": 1.69}, {"name": "沈阳市", "value": 1.61}, {"name": "长春市", "value": 1.37}, {"name": "绥化市", "value": 1.28}, {"name": "大庆市", "value": 1.22}, {"name": "鸡西市", "value": 1.12}], "伊春市": [{"name": "哈尔滨市", "value": 51.77}, {"name": "绥化市", "value": 13.19}, {"name": "佳木斯市", "value": 8.08}, {"name": "大庆市", "value": 2.25}, {"name": "长春市", "value": 2.14}, {"name": "沈阳市", "value": 1.87}, {"name": "黑河市", "value": 1.85}, {"name": "鹤岗市", "value": 1.58}, {"name": "齐齐哈尔市", "value": 1.55}, {"name": "北京市", "value": 1.3}], "酒泉市": [{"name": "嘉峪关市", "value": 42.13}, {"name": "兰州市", "value": 14.95}, {"name": "哈密市", "value": 8.97}, {"name": "张掖市", "value": 8.61}, {"name": "武威市", "value": 3.84}, {"name": "海西蒙古族藏族自治州", "value": 2.13}, {"name": "乌鲁木齐市", "value": 1.64}, {"name": "阿拉善盟", "value": 1.53}, {"name": "金昌市", "value": 1.22}, {"name": "定西市", "value": 1.15}]}, 
+        "2023": {"鹤岗市": [{"name": "哈尔滨市", "value": 40.26}, {"name": "佳木斯市", "value": 30.01}, {"name": "双鸭山市", "value": 3.43}, {"name": "北京市", "value": 2.8}, {"name": "伊春市", "value": 2.78}, {"name": "绥化市", "value": 1.92}, {"name": "沈阳市", "value": 1.64}, {"name": "长春市", "value": 1.63}, {"name": "牡丹江市", "value": 1.44}, {"name": "大连市", "value": 1.25}], "伊春市": [{"name": "哈尔滨市", "value": 45.51}, {"name": "绥化市", "value": 14.94}, {"name": "佳木斯市", "value": 6.54}, {"name": "北京市", "value": 3.05}, {"name": "长春市", "value": 2.99}, {"name": "大庆市", "value": 2.77}, {"name": "沈阳市", "value": 2.2}, {"name": "鹤岗市", "value": 2.09}, {"name": "黑河市", "value": 1.89}, {"name": "齐齐哈尔市", "value": 1.8}], "酒泉市": [{"name": "嘉峪关市", "value": 34.7}, {"name": "哈密市", "value": 12.89}, {"name": "兰州市", "value": 10.75}, {"name": "张掖市", "value": 9.27}, {"name": "武威市", "value": 4.53}, {"name": "海西蒙古族藏族自治州", "value": 2.66}, {"name": "西安市", "value": 2.04}, {"name": "乌鲁木齐市", "value": 1.96}, {"name": "阿拉善盟", "value": 1.96}, {"name": "定西市", "value": 1.5}]}, 
+        "2024": {"鹤岗市": [{"name": "哈尔滨市", "value": 39.54}, {"name": "佳木斯市", "value": 33.31}, {"name": "双鸭山市", "value": 2.76}, {"name": "伊春市", "value": 2.49}, {"name": "北京市", "value": 2.1}, {"name": "绥化市", "value": 1.82}, {"name": "长春市", "value": 1.51}, {"name": "牡丹江市", "value": 1.37}, {"name": "鸡西市", "value": 1.34}, {"name": "齐齐哈尔市", "value": 1.25}], "伊春市": [{"name": "哈尔滨市", "value": 45.69}, {"name": "绥化市", "value": 15.98}, {"name": "佳木斯市", "value": 7.12}, {"name": "大庆市", "value": 3.53}, {"name": "长春市", "value": 3.06}, {"name": "鹤岗市", "value": 2.16}, {"name": "黑河市", "value": 2.09}, {"name": "沈阳市", "value": 1.79}, {"name": "北京市", "value": 1.74}, {"name": "大连市", "value": 1.66}], "酒泉市": [{"name": "嘉峪关市", "value": 39.87}, {"name": "张掖市", "value": 13.86}, {"name": "哈密市", "value": 11.1}, {"name": "兰州市", "value": 8.12}, {"name": "武威市", "value": 3.43}, {"name": "海西蒙古族藏族自治州", "value": 2.02}, {"name": "乌鲁木齐市", "value": 1.93}, {"name": "阿拉善盟", "value": 1.61}, {"name": "西安市", "value": 1.53}, {"name": "吐鲁番市", "value": 1.21}]}
+    };
+
+    const chartDom = document.getElementById('chart-container');
+    const myChart = echarts.init(chartDom);
+    const yearSelect = document.getElementById('yearSelect');
+    const citySelect = document.getElementById('citySelect');
+
+    // 下拉框填充逻辑
+    const years = Object.keys(migrationData).sort((a,b) => b-a);
+    years.forEach(year => {
+        const opt = document.createElement('option');
+        opt.value = year;
+        opt.textContent = year + ' 年';
+        yearSelect.appendChild(opt);
+    });
+
+    function updateCityOptions() {
+        const selectedYear = yearSelect.value;
+        const previousCity = citySelect.value;
+        citySelect.innerHTML = '';
+        
+        const cities = Object.keys(migrationData[selectedYear] || {});
+        cities.forEach(city => {
+            const opt = document.createElement('option');
+            opt.value = city;
+            opt.textContent = city;
+            citySelect.appendChild(opt);
+        });
+        if (cities.includes(previousCity)) citySelect.value = previousCity;
+    }
+
+    // 核心渲染逻辑
+    function renderMap() {
+        const year = yearSelect.value;
+        const city = citySelect.value;
+        if (!migrationData[year] || !migrationData[year][city]) return;
+
+        const rawData = migrationData[year][city];
+        
+        // 生成连线数据 (带有源坐标和目标坐标)
+        const lineData = [];
+        const fromCoord = geoCoordMap[city];
+        if (fromCoord) {
+            rawData.forEach(item => {
+                const toCoord = geoCoordMap[item.name];
+                if (toCoord) {
+                    lineData.push({
+                        fromName: city,
+                        toName: item.name,
+                        coords: [fromCoord, toCoord],
+                        value: item.value
+                    });
+                }
+            });
+        }
+
+        // 生成目标城市的气泡数据
+        const scatterData = rawData.map(item => ({
+            name: item.name,
+            value: geoCoordMap[item.name] ? geoCoordMap[item.name].concat([item.value]) : []
+        })).filter(item => item.value.length > 0);
+
+        // ECharts 配置字典
+        const option = {
+            backgroundColor: '#1b1b1b', // 贴近图片的深色底
+            title: {
+                text: city + '迁出目的地',
+                left: 'center',
+                top: '6%',
+                textStyle: { color: '#fff', fontSize: 24, fontWeight: 'normal', textShadowBlur: 5, textShadowColor: '#000' }
+            },
+            tooltip: {
+                trigger: 'item',
+                backgroundColor: 'rgba(50,50,50,0.8)',
+                borderColor: '#777',
+                textStyle: { color: '#fff' },
+                formatter: function (params) {
+                    if (params.seriesType === 'lines') return `${params.data.fromName} → ${params.data.toName}<br>比例: ${params.data.value}%`;
+                    if (params.seriesType === 'effectScatter') return `${params.name}<br>流入占比: ${params.data.value[2] || 100}%`;
+                    return params.name;
+                }
+            },
+            geo: {
+                map: 'china',
+                roam: true, // 允许鼠标缩放和拖拽
+                center: geoCoordMap[city], // 加载时自动将中心定位到源城市
+                zoom: 3.5, // 放大视口以展示局部城市流向，贴近截图效果
+                label: { emphasis: { show: false } },
+                itemStyle: {
+                    areaColor: '#323c48',
+                    borderColor: '#404a59',
+                    borderWidth: 1
+                },
+                emphasis: {
+                    itemStyle: { areaColor: '#2a333d' }
+                }
+            },
+            series: [
+                // 1. 流动曲线及其发光彗星尾迹
+                {
+                    type: 'lines',
+                    zlevel: 1,
+                    effect: {
+                        show: true,
+                        period: 4, // 动画周期(速度)
+                        trailLength: 0.7, // 尾巴长度比例
+                        color: '#fff', // 尾部发白光
+                        symbolSize: 3
+                    },
+                    lineStyle: {
+                        color: '#ffa022',
+                        width: 0, 
+                        curveness: 0.2 // 曲线弧度
+                    },
+                    data: lineData
+                },
+                // 2. 底层静态轨迹线 (带透明度)
+                {
+                    type: 'lines',
+                    zlevel: 2,
+                    symbol: ['none', 'none'], 
+                    effect: { show: true, period: 4, trailLength: 0, symbol: 'circle', symbolSize: 4 },
+                    lineStyle: { color: '#a6c84c', width: 1.5, opacity: 0.3, curveness: 0.2 },
+                    data: lineData
+                },
+                // 3. 目标城市呼吸发光点
+                {
+                    type: 'effectScatter',
+                    coordinateSystem: 'geo',
+                    zlevel: 2,
+                    rippleEffect: { brushType: 'stroke', scale: 3 },
+                    label: { show: true, position: 'right', formatter: '{b}', color: '#fff', fontSize: 13 },
+                    symbolSize: function (val) {
+                        return Math.max(5, Math.min(15, val[2] / 2)); // 根据比例映射光点大小
+                    },
+                    itemStyle: { color: '#ffa022', shadowBlur: 10, shadowColor: '#333' },
+                    data: scatterData
+                },
+                // 4. 起点城市的巨型高亮红点
+                {
+                    type: 'effectScatter',
+                    coordinateSystem: 'geo',
+                    zlevel: 3,
+                    rippleEffect: { brushType: 'fill', scale: 4 },
+                    label: {
+                        show: true, position: 'bottom', formatter: '{b}',
+                        fontSize: 16, fontWeight: 'bold', color: '#fff',
+                        textBorderColor: '#000', textBorderWidth: 2
+                    },
+                    symbolSize: 18,
+                    itemStyle: { color: '#ff3333', shadowBlur: 20, shadowColor: '#ff3333' },
+                    data: [{ name: city, value: geoCoordMap[city].concat([100]) }]
+                }
+            ]
+        };
+
+        // 为了防止快速切换造成的动画残影，每次更新前清空画布实例
+        myChart.clear();
+        myChart.setOption(option);
+    }
+
+    // 事件绑定与初始渲染
+    yearSelect.addEventListener('change', () => { updateCityOptions(); renderMap(); });
+    citySelect.addEventListener('change', renderMap);
+    window.addEventListener('resize', () => myChart.resize());
+
+    updateCityOptions();
+    renderMap();
+</script>
+</body>
+</html>
